@@ -1,0 +1,61 @@
+# Rencana eksperimen tim 20: Gestur dinamis dari IMU ponsel (kamera sebagai
+# acuan)
+# Label: Desain: gestur yang diminta layar
+# Versi final: audio diaktifkan (usulan bagian 7) untuk penanda sinkronisasi.
+# Jika pembimbing tidak menyetujui, ubah audio.aktif menjadi false dan hapus sample_rate.
+tim: 20
+judul: Gestur dinamis dari IMU ponsel (kamera sebagai acuan)
+pembimbing: Ahmad Luky Ramdani
+pilar: Gerak
+seed: 1020
+ulangan: 5
+durasi_kondisi_detik: 3
+jeda_detik: 0.5
+rekam:
+  audio:
+    aktif: true
+    sample_rate: 16000
+  kamera:
+    aktif: true
+    interval_detik: 0.1
+    lebar: 640
+    tinggi: 480
+faktor:
+  partisipan:
+    jenis: manual
+    taraf:
+      - P01
+      - P02
+      - P03
+      - P04
+      - P05
+      - P06
+    instruksi: Partisipan {taraf} siap di posisi (formulir persetujuan sudah
+      ditandatangani)
+  gestur:
+    jenis: isyarat
+    taraf:
+      - lambaian
+      - putar searah jarum jam
+      - putar berlawanan arah
+      - tarik ke bawah
+      - dorong ke depan
+      - ketuk udara dua kali
+      - geser ke kiri
+      - geser ke kanan
+    instruksi: 'Lakukan: {taraf}'
+catatan: Ponsel merekam bersamaan; sinkron dengan dua ketukan ponsel ke telapak
+  tangan di depan kamera di awal sesi (terbaca di IMU, kamera, dan audio)
+metode:
+  jenis_tugas: Klasifikasi 8 gestur dinamis
+  masukan_model: IMU ponsel 100 Hz, 3 s
+  metrik_utama: F1 per partisipan
+  jalur:
+    - CNN
+    - TL
+    - RNN
+    - Transformer
+    - AE
+  pembanding_non_dl: Fitur statistik + FFT (RMS, puncak, kurtosis, energi pita)
+    + Random Forest
+  catatan_metode: TL = spektrogram IMU ke MobileNet pralatih
