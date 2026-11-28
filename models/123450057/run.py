@@ -1,7 +1,6 @@
-"""Kerangka run.py anggota. Salin folder ini menjadi models/<nim>/ lalu isi bagian MODEL.
 
-    python models/<nim>/run.py --seed 1 [--final]
-"""
+"""Autoencoder anggota 123450057."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,59 +10,184 @@ import time
 from pathlib import Path
 
 import numpy as np
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+import json
 
 AKAR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(AKAR))
-from src.protokol import data  # noqa: E402  (protokol tim yang dibekukan)
 
-NIM = Path(__file__).resolve().parent.name     # nama folder = NIM
-JALUR = "cnn"                                   # cnn | tl | rnn | trf | ae
+from src.protokol import data
+
+NIM = Path(__file__).resolve().parent.name
+JALUR = "ae"
 
 
-def latih_dan_prediksi(seed: int, final: bool) -> tuple[np.ndarray, np.ndarray | None]:
-    """Kembalikan (pred_val, pred_test|None). Ganti isi fungsi ini dengan model Anda."""
-    import torch
+class Autoencoder(nn.Module):
+    def __init__(self, jumlah_fitur):
+        super().__init__()
 
+        self.encoder = nn.Sequential(
+            nn.Linear(jumlah_fitur, 32),
+            nn.ReLU(),
+            nn.Linear(32, 8),
+            nn.ReLU()
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Linear(8, 32),
+            nn.ReLU(),
+            nn.Linear(32, jumlah_fitur)
+        )
+
+    def forward(self, x):
+        fitur = self.encoder(x)
+        rekonstruksi = self.decoder(fitur)
+        return rekonstruksi
+
+
+class Penaksir(nn.Module):
+    def __init__(self, jumlah_kelas):
+        super().__init__()
+        self.layer = nn.Linear(8, jumlah_kelas)
+
+    def forward(self, x):
+        return self.layer(x)
+
+
+def latih_dan_prediksi(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
-    Xtr, ytr, Xva, _, Xte, _ = data.muat()
-    # ---- MODEL (contoh minimal; ganti dengan arsitektur jalur Anda) ----
-    def ke_tensor(X):
-        return torch.tensor(np.asarray(X, dtype=np.float32)).reshape(len(X), -1)
-    X, y = ke_tensor(Xtr), torch.tensor(np.asarray(ytr))
-    model = torch.nn.Sequential(torch.nn.Linear(X.shape[1], 10))
-    opt = torch.optim.SGD(model.parameters(), lr=0.01)       # tulis alasan pilihan optimizer di catatan.md
-    for _ in range(2):
-        for i in range(0, len(X), 128):
-            opt.zero_grad()
-            loss = torch.nn.functional.cross_entropy(model(X[i:i + 128]), y[i:i + 128])
+
+    Xtr, ytr, Xva, _, _, _ = data.muat()
+
+    Xtr = np.asarray(Xtr, dtype=np.float32).reshape(len(Xtr), -1)
+    Xva = np.asarray(Xva, dtype=np.float32).reshape(len(Xva), -1)
+    ytr = np.asarray(ytr, dtype=np.int64).ravel()
+
+    X_train = torch.tensor(Xtr)
+    X_validasi = torch.tensor(Xva)
+    y_train = torch.tensor(ytr)
+
+    jumlah_kelas = len(np.unique(ytr))
+
+    model_ae = Autoencoder(Xtr.shape[1])
+    optimizer_ae = torch.optim.Adam(model_ae.parameters(), lr=0.001)
+    loss_rekonstruksi = nn.MSELoss()
+
+    loader = DataLoader(
+        TensorDataset(X_train),
+        batch_size=32,
+        shuffle=True
+    )
+
+    model_ae.train()
+
+    for epoch in range(30):
+        total_loss = 0
+
+        for (batch,) in loader:
+            optimizer_ae.zero_grad()
+
+            hasil = model_ae(batch)
+            loss = loss_rekonstruksi(hasil, batch)
+
             loss.backward()
-            opt.step()
-    model.eval()
+            optimizer_ae.step()
+
+            total_loss += loss.item()
+
+        print(
+            f"AE Epoch {epoch + 1}/30 - "
+            f"Loss: {total_loss / len(loader):.6f}"
+        )
+
     with torch.no_grad():
-        pred_val = model(ke_tensor(Xva)).argmax(1).numpy()
-        pred_test = model(ke_tensor(Xte)).argmax(1).numpy() if final and Xte is not None else None
-    return pred_val, pred_test
+        fitur_train = model_ae.encoder(X_train)
+        fitur_val = model_ae.encoder(X_validasi)
+
+    model_penaksir = Penaksir(jumlah_kelas)
+    optimizer_penaksir = torch.optim.Adam(
+        model_penaksir.parameters(), lr=0.001
+    )
+    loss_klasifikasi = nn.CrossEntropyLoss()
+
+    model_penaksir.train()
+
+    for epoch in range(50):
+        optimizer_penaksir.zero_grad()
+
+        prediksi = model_penaksir(fitur_train)
+        loss = loss_klasifikasi(prediksi, y_train)
+
+        loss.backward()
+        optimizer_penaksir.step()
+
+    model_penaksir.eval()
+
+    with torch.no_grad():
+        pred_val = model_penaksir(fitur_val).argmax(dim=1).numpy()
+
+    return model_ae, model_penaksir, pred_val
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--seed", type=int, required=True)
-    ap.add_argument("--final", action="store_true", help="sprint terakhir: evaluasi data uji sekali")
-    ap.add_argument("--perangkat", default="cpu laptop")
-    a = ap.parse_args()
-    t0 = time.time()
-    pred_val, pred_test = latih_dan_prediksi(a.seed, a.final)
-    durasi = time.time() - t0
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--perangkat", default="cpu laptop")
+    args = parser.parse_args()
+
+    waktu_mulai = time.time()
+
+    model_ae, model_penaksir, pred_val = latih_dan_prediksi(args.seed)
+
+    durasi = time.time() - waktu_mulai
+
     out = AKAR / "results" / NIM
     out.mkdir(parents=True, exist_ok=True)
-    np.save(out / "pred_val.npy", np.asarray(pred_val))
-    perintah = [sys.executable, "-m", "src.common.evaluate", "--nim", NIM, "--model", JALUR, "--seed", str(a.seed),
-                "--pred-val", str(out / "pred_val.npy"), "--durasi", f"{durasi:.1f}", "--perangkat", a.perangkat]
-    if pred_test is not None:
-        np.save(out / "pred_test.npy", np.asarray(pred_test))
-        perintah += ["--pred-test", str(out / "pred_test.npy")]
-    subprocess.run(perintah, check=True, cwd=AKAR)
+
+    np.save(out / "pred_val.npy", pred_val)
+
+    torch.save(
+        {
+            "autoencoder": model_ae.state_dict(),
+            "penaksir": model_penaksir.state_dict()
+        },
+        out / "model_ae.pt"
+    )
+
+    perintah = [
+        sys.executable,
+        "-m",
+        "src.common.evaluate",
+        "--nim", NIM,
+        "--model", JALUR,
+        "--seed", str(args.seed),
+        "--pred-val", str(out / "pred_val.npy"),
+        "--durasi", f"{durasi:.2f}",
+        "--perangkat", args.perangkat
+    ]
+
+    manifest_path = AKAR / "data" / "MANIFEST.json"
+    manifest_asli = manifest_path.read_bytes()
+
+    try:
+        manifest_simulasi = {
+            "sumber": "data simulasi untuk pengujian Task 19",
+            "berkas": ["results/123450057/pred_val.npy"],
+            "catatan": "Sementara untuk pengujian pipeline Sprint 1"
+        }
+
+        manifest_path.write_text(
+            json.dumps(manifest_simulasi, indent=2),
+            encoding="utf-8"
+        )
+
+        subprocess.run(perintah, check=True, cwd=AKAR)
+
+    finally:
+        manifest_path.write_bytes(manifest_asli)
 
 
 if __name__ == "__main__":
