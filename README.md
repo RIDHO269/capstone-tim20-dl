@@ -88,3 +88,30 @@ optimizer dengan alasan tertulis, ≥ 1 regularisasi, tuning hyperparameter deng
 pencarian, ≥ 2 ablation, 3 seed pada konfigurasi akhir.
 
 Lisensi: MIT. Repo ini masuk Galeri Capstone sebagai portofolio setelah semester berakhir.
+
+---
+
+## Reproduksi Tim 20 (Neuron)
+
+- **Kasus**: Gestur dinamis dari IMU ponsel (`rencana/t20-gestur-imu.yaml`, 8 kelas gestur, 6 partisipan `P01–P06`, 240 kondisi).
+- **Pembagian jalur model**:
+  - `123450060` (Ridho): `cnn` — CNN dari nol
+  - `123450095` (Fathya): `tl` — Transfer Learning (spektrogram IMU ke MobileNetV2)
+  - `123450022` (Vany): `rnn` — Bidirectional GRU
+  - `123450023` (Dharu): `trf` — Transformer Encoder
+  - `123450057` (Sarah): `ae` — Autoencoder
+
+### Perintah Reproduksi
+```bash
+pip install -r requirements.txt
+
+# 1. Jalankan baseline starter
+python -m src.common.baseline --seed 2026
+
+# 2. Jalankan salah satu jalur anggota (contoh RNN, NIM 123450022)
+python models/123450022/run.py --seed 1
+
+# 3. Jalankan seluruh jalur tim (3 seed) dan rakit tabel reports/hasil_komparasi.md
+python run_all.py --seeds 1 2 3
+```
+
